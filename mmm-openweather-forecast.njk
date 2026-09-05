@@ -79,7 +79,7 @@
           <span class="wind-container">
             <img class="inline-icon wind-icon" src="{{ inlineIcons.wind }}" />
             <span class="wind-speed">{{ forecast.currently.wind.windSpeed }}</span>
-            
+
             {% if forecast.currently.wind.windGust %}
               <span class="wind-gusts">{{ forecast.currently.wind.windGust }}</span>
             {% endif %}
@@ -209,14 +209,14 @@
 
 
             {% if config.hourlyExtras.precipitation %}
-    
+
               <span class="precipitation-container">
                 {% if (config.forecastLayout == "tiled" ) %}
                   <img class="inline-icon rain" src="{{ inlineIcons.rain }}" />
                 {% endif %}
 
                 <span class="pop">{{ h.precipitation.pop }}</span>
-                
+
                 {% if h.precipitation.accumulation %}
                   <span class="pop">({{ h.precipitation.accumulation }})</span>
                 {% endif %}
@@ -231,7 +231,7 @@
                 {% endif %}
 
                 <span class="wind-speed">{{ h.wind.windSpeed }}</span>
-                
+
                 {% if h.wind.windGust %}
                   <span class="wind-gusts">{{ h.wind.windGust }}</span>
                 {% endif %}
@@ -248,7 +248,7 @@
                 {% endif %}
 
                 <span class="pressure">{{ h.pressure }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -260,7 +260,7 @@
                 {% endif %}
 
                 <span class="humidity">{{ h.humidity }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -272,7 +272,7 @@
                 {% endif %}
 
                 <span class="dew-point">{{ h.dewPoint }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -284,7 +284,7 @@
                 {% endif %}
 
                 <span class="uv-index">{{ h.uvIndex }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -296,7 +296,7 @@
                 {% endif %}
 
                 <span class="visibility">{{ h.visibility }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -307,7 +307,7 @@
 
 
       </div>
-    {% endif %}      
+    {% endif %}
 
 
     {# -------------- Daily Forecast -------------- #}
@@ -370,6 +370,7 @@
 
           </div>
 
+
         {% endif %}
 
 
@@ -393,14 +394,14 @@
 
 
             {% if config.dailyExtras.precipitation %}
-    
+
               <span class="precipitation-container">
                 {% if (config.forecastLayout == "tiled" ) %}
                   <img class="inline-icon rain" src="{{ inlineIcons.rain }}" />
                 {% endif %}
 
                 <span class="pop">{{ d.precipitation.pop }}</span>
-                
+
                 {% if d.precipitation.accumulation %}
                   <span class="pop">({{ d.precipitation.accumulation }})</span>
                 {% endif %}
@@ -416,7 +417,7 @@
                 {% endif %}
 
                 <span class="sunrise">{{ d.sunrise }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -428,7 +429,7 @@
                 {% endif %}
 
                 <span class="sunrise">{{ d.sunset }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -439,7 +440,7 @@
                 {% endif %}
 
                 <span class="wind-speed">{{ d.wind.windSpeed }}</span>
-                
+
                 {% if d.wind.windGust %}
                   <span class="wind-gusts">{{ d.wind.windGust }}</span>
                 {% endif %}
@@ -456,7 +457,7 @@
                 {% endif %}
 
                 <span class="pressure">{{ d.pressure }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -468,7 +469,7 @@
                 {% endif %}
 
                 <span class="humidity">{{ d.humidity }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -480,7 +481,7 @@
                 {% endif %}
 
                 <span class="dew-point">{{ d.dewPoint }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -492,7 +493,7 @@
                 {% endif %}
 
                 <span class="uv-index">{{ d.uvIndex }}</span>
-                
+
               </span>
             {% endif %}
 
@@ -503,10 +504,18 @@
 
 
       </div>
-    {% endif %}      
+    {% endif %}
 
 
   {% endif %}
 
+  {% if config.showGraphPlot %}
+    <div id="owf-graph-container" class="owf-graph-container" style="width: 320px; height: 115px; float: right; background-color: black !important; overflow: hidden; position: relative;">
+      <img id="owf-graph-image" src="" style="width: 100%; height: 100%; background-color: black !important; opacity: 0; display: block; object-fit: contain; position: relative; z-index: 1; transition: opacity 0.5s ease-in-out;" />
+      <img id="owf-graph-image-preload" src="" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; display: none; object-fit: contain; transition: opacity 0.5s ease-in-out; z-index: 2; background-color: black !important;" />
+    </div>
+  {% endif %}
+
   <div class="attribution small dimmed">Powered by OpenWeather</div>
 </div>
+

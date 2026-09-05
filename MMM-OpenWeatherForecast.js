@@ -5,7 +5,7 @@
   https://github.com/jclarke0000/MMM-OpenWeatherForecast
 
   Icons in use by this module:
-  
+
   Skycons - Animated icon set by Dark Sky
   http://darkskyapp.github.io/skycons/
   (using the fork created by Maxime Warner
@@ -63,6 +63,7 @@ Module.register("MMM-OpenWeatherForecast", {
     useAnimatedIcons: true,
     animateMainIconOnly: true,
     animatedIconStartDelay: 1000,
+    showGraphPlot: true,
     mainIconSize: 100,
     forecastIconSize: 70,
     updateFadeSpeed: 500,
@@ -122,12 +123,9 @@ Module.register("MMM-OpenWeatherForecast", {
     label_low: "L",
     label_hourlyTimeFormat: "h a",
     label_sunriseTimeFormat: "h:mm a",
-    label_days: ["Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"],
+    label_days: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
     label_ordinals: ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"],
   },
-
-
-  
 
   validUnits: ["standard","metric","imperial"],
   validLayouts: ["tiled", "table"],
@@ -144,6 +142,125 @@ Module.register("MMM-OpenWeatherForecast", {
     return "mmm-openweather-forecast.njk";
   },
 
+  // FIXED: True seamless crossfade with NO blank frames - overlay technique
+  updateImage: function () {
+    if (!this.config.showGraphPlot) {
+      return;
+    }
+
+    const visibleImage = document.getElementById("owf-graph-image");
+    const preloadImage = document.getElementById("owf-graph-image-preload");
+
+    if (!visibleImage || !preloadImage) {
+      console.log("[MMM-OpenWeatherForecast] Image elements not found in DOM yet");
+      return;
+    }
+
+    const self = this;
+    const newTimestamp = Date.now();
+    const imagePath = this.file("Graphplot/temperature_plot.png");
+
+    // Use timestamp only for cache-busting when graph is actually updated
+    const cacheBustedPath = imagePath + `?t=${newTimestamp}`;
+
+    console.log("[MMM-OpenWeatherForecast] Starting background image load: " + cacheBustedPath);
+
+    // clear any previous handlers to avoid duplicate calls
+    preloadImage.onload = null;
+    preloadImage.onerror = null;
+
+    // CRITICAL: Attempt a quick HEAD check to ensure the file is ready on the server
+    const MAX_ATTEMPTS = 6;
+    let attempt = 0;
+
+    const tryLoad = function() {
+      attempt++;
+      // Use fetch HEAD to confirm file availability before assigning to <img>
+      fetch(cacheBustedPath, { method: 'HEAD', cache: 'no-store' }).then(function(resp) {
+        if (resp && resp.ok) {
+          console.log(`[MMM-OpenWeatherForecast] HEAD check ok (attempt ${attempt}) - proceeding to load image`);
+
+          // CRITICAL: Preload image loads in background, THEN overlays on top for crossfade
+          preloadImage.onload = function() {
+            console.log("[MMM-OpenWeatherForecast] New image loaded in background, starting crossfade");
+
+            // Position preload image exactly over the visible image
+            preloadImage.style.display = "block";
+            preloadImage.style.opacity = "0";
+
+            // Force browser to recognize the display change before animating
+            preloadImage.offsetHeight; // Force reflow
+
+            // Fade IN the new image on top (old image still visible underneath)
+            preloadImage.style.opacity = "1";
+
+            // After crossfade completes, copy pixels from preload into visible to avoid re-request
+            setTimeout(function() {
+              try {
+                // Create a temporary canvas matching the preload image
+                var canvas = document.createElement('canvas');
+                canvas.width = preloadImage.naturalWidth || preloadImage.width;
+                canvas.height = preloadImage.naturalHeight || preloadImage.height;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(preloadImage, 0, 0, canvas.width, canvas.height);
+
+                // Replace visible image source with dataURL from canvas (instant, avoids network re-fetch)
+                visibleImage.src = canvas.toDataURL('image/png');
+                // Ensure visible image is shown immediately
+                try { visibleImage.style.opacity = '1'; } catch (e) {}
+              } catch (e) {
+                // If anything goes wrong, fallback to URL swap
+                console.warn('[MMM-OpenWeatherForecast] Canvas copy failed, falling back to URL swap:', e);
+                visibleImage.src = preloadImage.src;
+                try { visibleImage.style.opacity = '1'; } catch (e) {}
+              }
+
+              // Hide the preload overlay
+              preloadImage.style.display = "none";
+              preloadImage.style.opacity = "0";
+
+              console.log("[MMM-OpenWeatherForecast] Crossfade complete - new image now showing");
+            }, 600); // Slightly longer than CSS transition to ensure smoothness
+          };
+
+          preloadImage.onerror = function(ev) {
+            console.error("[MMM-OpenWeatherForecast] preloadImage.onerror - failed to load: " + cacheBustedPath, ev);
+            preloadImage.style.display = "none";
+            preloadImage.style.opacity = "0";
+            // As fallback, try to directly load into visible image once more
+            try {
+              visibleImage.src = cacheBustedPath;
+              visibleImage.style.opacity = '1'; // Ensure visibility
+            } catch (e) {
+              console.error('[MMM-OpenWeatherForecast] direct visibleImage.src assignment failed:', e);
+            }
+          };
+
+          // Start loading the new image in background (doesn't block or show flicker)
+          preloadImage.src = cacheBustedPath;
+
+        } else {
+          console.warn(`[MMM-OpenWeatherForecast] HEAD check returned ${resp.status} (attempt ${attempt}) - will retry`);
+          if (attempt < MAX_ATTEMPTS) {
+            setTimeout(tryLoad, 400);
+          } else {
+            console.error('[MMM-OpenWeatherForecast] File not available after multiple attempts:', cacheBustedPath);
+          }
+        }
+      }).catch(function(err) {
+        console.warn(`[MMM-OpenWeatherForecast] HEAD check error (attempt ${attempt}):`, err);
+        if (attempt < MAX_ATTEMPTS) {
+          setTimeout(tryLoad, 400);
+        } else {
+          console.error('[MMM-OpenWeatherForecast] HEAD check failed repeatedly, aborting image update');
+        }
+      });
+    };
+
+    // Start attempts
+    tryLoad();
+  },
+
   /*
     Data object provided to the Nunjucks template. The template does not
     do any data minipulation; the strings provided here are displayed as-is.
@@ -151,6 +268,7 @@ Module.register("MMM-OpenWeatherForecast", {
     a certain section should be displayed, and simple loops for the hourly
     and daily forecast.
    */
+
   getTemplateData: function () {
     return {
       phrases: {
@@ -187,10 +305,15 @@ Module.register("MMM-OpenWeatherForecast", {
     this.iconIdCounter = 0;
     this.formattedWeatherData = null;
 
+    // Track image state
+    this.imageReady = false;
+    this.imageTimestamp = 0;
+    this.graphImageLoaded = false; // Track if initial graph has been loaded to prevent preload flicker
+
     /*
       Optionally, Dark Sky's Skycons animated icon
       set can be used.  If so, it is drawn to the DOM
-      and animated on demand as opposed to being 
+      and animated on demand as opposed to being
       contained in animated images such as GIFs or SVGs.
       This initializes the colours for the icons to use.
      */
@@ -199,7 +322,7 @@ Module.register("MMM-OpenWeatherForecast", {
         "monochrome": false,
         "colors" : {
           "main" : "#FFFFFF",
-          "moon" : this.config.colored ? "#FFFDC2" : "#FFFFFF", 
+          "moon" : this.config.colored ? "#FFFDC2" : "#FFFFFF",
           "fog" : "#FFFFFF",
           "fogbank" : "#FFFFFF",
           "cloud" : this.config.colored ? "#BEBEBE" : "#999999",
@@ -214,10 +337,10 @@ Module.register("MMM-OpenWeatherForecast", {
     //sanitize optional parameters
     if (this.validUnits.indexOf(this.config.units) == -1) {
       this.config.units = "standard";
-    } 
+    }
     if (this.validLayouts.indexOf(this.config.forecastLayout) == -1) {
       this.config.forecastLayout = "tiled";
-    } 
+    }
     if (this.iconsets[this.config.iconset] == null) {
       this.config.iconset = "1c";
     }
@@ -232,15 +355,15 @@ Module.register("MMM-OpenWeatherForecast", {
       "updateFadeSpeed"
     ]);
 
-
-
-    //force icon set to mono version whern config.coloured = false
+    //force icon set to mono version when config.coloured = false
     if (this.config.colored == false) {
-      this.config.iconset = this.config.iconset.replace("c","m");      
+      this.config.iconset = this.config.iconset.replace("c","m");
     }
 
     //start data poll
     var self = this;
+
+
     setTimeout(function() {
 
       //first data pull is delayed by config
@@ -251,7 +374,6 @@ Module.register("MMM-OpenWeatherForecast", {
       }, self.config.updateInterval * 60 * 1000); //convert to milliseconds
 
     }, this.config.requestDelay);
-    
 
   },
 
@@ -263,7 +385,8 @@ Module.register("MMM-OpenWeatherForecast", {
       units: this.config.units,
       language: this.config.language,
       instanceId: this.identifier,
-      requestDelay: this.config.requestDelay
+      requestDelay: this.config.requestDelay,
+      showGraphPlot: this.config.showGraphPlot
     });
 
   },
@@ -272,42 +395,77 @@ Module.register("MMM-OpenWeatherForecast", {
 
     if (notification == "OPENWEATHER_FORECAST_DATA" && payload.instanceId == this.identifier) {
 
-      //clear animated icon cache
+      // Clear animated icon cache
       if (this.config.useAnimatedIcons) {
         this.clearIcons();
       }
 
-      //process weather data
+      // Process weather data
       this.weatherData = payload;
       this.formattedWeatherData = this.processWeatherData();
 
+      // Update DOM immediately with weather data (non-blocking)
       this.updateDom(this.config.updateFadeSpeed);
 
-      //broadcast weather update
+      // Try to load any existing graph immediately (non-blocking fallback)
+      if (this.config.showGraphPlot) {
+        var self = this;
+        setTimeout(function() {
+          try {
+            self.checkAndLoadExistingGraph(15000, 2000);
+          } catch (e) {
+            console.error('[MMM-OpenWeatherForecast] checkAndLoadExistingGraph failed:', e);
+          }
+        }, this.config.updateFadeSpeed + 50);
+      }
+
+      // Broadcast weather update
       this.sendNotification("OPENWEATHER_FORECAST_WEATHER_UPDATE", payload);
 
-      //start icon playback
+      // Start icon playback
       if (this.config.useAnimatedIcons) {
         var self = this;
         setTimeout(function() {
           self.playIcons(self);
         }, this.config.updateFadeSpeed + this.config.animatedIconStartDelay);
-      } 
-
+      }
     }
 
+    // FIXED: Load or update graph image ONLY when GRAPH_READY notification is received
+    if (notification === "OPENWEATHER_FORECAST_GRAPH_READY" && this.config.showGraphPlot) {
+      console.log("[MMM-OpenWeatherForecast] Graph ready notification received");
+      var self = this;
 
+      setTimeout(function() {
+        const visibleImage = document.getElementById("owf-graph-image");
+
+        if (!self.graphImageLoaded) {
+          // First time loading the graph - fade it in (use cache-busted URL to avoid stale cache)
+          if (visibleImage) {
+            visibleImage.onload = function() {
+              visibleImage.style.opacity = "1";
+              console.log("[MMM-OpenWeatherForecast] Initial graph loaded and faded in");
+            };
+            visibleImage.src = self.file("Graphplot/temperature_plot.png") + '?t=' + Date.now();
+            self.graphImageLoaded = true;
+          }
+        } else {
+          // Subsequent updates - use crossfade
+          self.updateImage();
+        }
+      }, 300); // Small delay for file to be fully available on disk
+    }
   },
 
   /*
     This prepares the data to be used by the Nunjucks template.  The template does not do any logic other
     if statements to determine if a certain section should be displayed, and a simple loop to go through
-    the houly / daily forecast items.
+    the hourly / daily forecast items.
   */
   processWeatherData: function() {
 
     var timeZoneOffset = this.weatherData.timezone_offset;
-    var summary = this.weatherData.current.weather[0].description.substring(0,1).toUpperCase() + this.weatherData.current.weather[0].description.substring(1) + ".";
+    var summary = this.weatherData.current.weather[0].description.substring(0,1).toUpperCase() + this.weatherData.current.weather[0].description.substring(1);
 
     var hourlies = [];
     if (this.config.showHourlyForecast) {
@@ -340,7 +498,7 @@ Module.register("MMM-OpenWeatherForecast", {
         }
 
         var thisDay = this.weatherData.daily[i];
-        // thisDay.dt = thisDay.dt + timeZoneOffset; 
+        // thisDay.dt = thisDay.dt + timeZoneOffset;
 
         dailies.push(this.forecastItemFactory(thisDay, "daily"));
       }
@@ -366,7 +524,7 @@ Module.register("MMM-OpenWeatherForecast", {
 
     return {
       "currently" : {
-        temperature: this.config.showFeelsLikeTemp ? Math.round(this.weatherData.current.feels_like) + "°" : Math.round(this.weatherData.current.temp) + "°",
+        temperature: this.config.showFeelsLikeTemp ? Math.round(this.weatherData.current.feels_like).toFixed(1) + "°" : (this.weatherData.current.temp).toFixed(1) + "°",
         animatedIconId: this.config.useAnimatedIcons ? this.addIcon(this.iconMap[this.weatherData.current.weather[0].icon], true) : null,
         iconPath: this.generateIconSrc(this.iconMap[this.weatherData.current.weather[0].icon]),
         tempRange: this.formatHiLowTemperature(this.weatherData.daily[0].temp.max,this.weatherData.daily[0].temp.min),
@@ -385,8 +543,7 @@ Module.register("MMM-OpenWeatherForecast", {
       "daily" : dailies,
       "alerts" : alerts
     };
-  },  
-
+  },
 
   /*
     Hourly and Daily forecast items are very similar.  So one routine builds the data
@@ -435,10 +592,10 @@ Module.register("MMM-OpenWeatherForecast", {
     // --------- Sunrise / Sunset -----------
     if (fData.sunrise) {
       fItem.sunrise = moment(fData.sunrise * 1000).format(this.config.label_sunriseTimeFormat);
-    } 
+    }
     if (fData.sunset) {
       fItem.sunset = moment(fData.sunset * 1000).format(this.config.label_sunriseTimeFormat);
-    } 
+    }
 
     // --------- Barometric Pressure -------------
     fItem.pressure = Math.round(fData.pressure / 10) + " kPa";
@@ -483,7 +640,7 @@ Module.register("MMM-OpenWeatherForecast", {
         accumulation = (Math.round(rainAccumulation * 10) / 10) + " " + this.getUnit("accumulationRain");
       } else if (snowAccumulation) { //snow
         accumulation = Math.round(snowAccumulation) + " " + this.getUnit("accumulationSnow");
-      } 
+      }
     }
 
     return {
@@ -507,7 +664,7 @@ Module.register("MMM-OpenWeatherForecast", {
     var windGust = null;
     if (!this.config.concise && gust) {
       windGust = " (" + this.config.label_maximum + " " + Math.round(gust * conversionFactor) + " " + this.getUnit("windSpeed") + ")";
-    }    
+    }
 
     return {
       windSpeed: Math.round(speed * conversionFactor) + " " + this.getUnit("windSpeed") + (!this.config.concise ? " " + this.getOrdinal(bearing) : ""),
@@ -578,7 +735,7 @@ Module.register("MMM-OpenWeatherForecast", {
       snow
       wind
 
-    All of the icon sets below support these ten plus an 
+    All of the icon sets below support these ten plus an
     additional three in anticipation of Dark Sky enabling
     a few more:
 
@@ -607,8 +764,7 @@ Module.register("MMM-OpenWeatherForecast", {
     "5c": {path:"5c", format:"svg"},
   },
 
-
-/*
+  /*
     Previous version of this module was built for Dark Sky which had it's own icon set.
     In order to reuse those icon, I need to map the standard icon IDs to the Dark Sky
     icon file names.  Possible icons are:
@@ -658,8 +814,6 @@ Module.register("MMM-OpenWeatherForecast", {
 
   },
 
-
-
   /*
     When the Skycons animated set is in use, the icons need
     to be rebuilt with each data refresh.  This routine clears
@@ -692,7 +846,6 @@ Module.register("MMM-OpenWeatherForecast", {
       iconId = "skycon_" + this.iconCache.length;
     }
 
-
     //add id and icon name to cache
     this.iconCache.push({
       "id" : iconId,
@@ -711,6 +864,15 @@ Module.register("MMM-OpenWeatherForecast", {
     before actually drawing the icons.
   */
   playIcons: function(inst) {
+    // Check if the main canvas element exists in the DOM yet
+    var mainIcon = inst.iconCache.find(function(i) { return i.id === "skycon_main"; });
+    if (mainIcon && !document.getElementById(mainIcon.id)) {
+      // Canvas not in DOM yet — retry after 500ms (Pi 3A+ can be slow on startup)
+      console.log("[MMM-OpenWeatherForecast] Canvas not ready, retrying playIcons in 500ms...");
+      setTimeout(function() { inst.playIcons(inst); }, 500);
+      return;
+    }
+
     inst.iconCache.forEach(function(icon) {
       console.log("=============== Adding animated icon " +icon.id + ": '" + icon.icon +"'");
       inst.skycons.add(icon.id, icon.icon);
@@ -734,9 +896,68 @@ Module.register("MMM-OpenWeatherForecast", {
         self.config[key] = parseInt(self.config[key]);
       }
     });
-  }
+  },
 
+  // FIXED: Check for existing graph file (fallback) and load it if present.
+  checkAndLoadExistingGraph: function(timeoutMs = 30000, intervalMs = 2000) {
+    if (!this.config.showGraphPlot) {
+      return;
+    }
 
+    const visibleImage = document.getElementById("owf-graph-image");
+    if (!visibleImage) {
+      console.log("[MMM-OpenWeatherForecast] checkAndLoadExistingGraph: image element not found yet");
+      return;
+    }
 
+    const self = this;
+    const imagePath = this.file("Graphplot/temperature_plot.png");
+    let elapsed = 0;
+    let pollHandle = null;
+
+    const tryHead = function() {
+      // Use HEAD to check existence without fetching the whole resource
+      fetch(imagePath, { method: 'HEAD', cache: 'no-store' }).then(function(response) {
+        if (response && response.ok) {
+          console.log('[MMM-OpenWeatherForecast] Existing graph found via HEAD, loading image');
+          // If first time, simply set src and fade in on load
+          if (!self.graphImageLoaded) {
+            visibleImage.onload = function() {
+              visibleImage.style.opacity = '1';
+              console.log('[MMM-OpenWeatherForecast] Existing graph loaded and faded in (fallback)');
+            };
+            visibleImage.src = imagePath + '?t=' + Date.now();
+            self.graphImageLoaded = true;
+          } else {
+            // If already loaded previously, trigger the crossfade update
+            self.updateImage();
+          }
+
+          if (pollHandle) {
+            clearInterval(pollHandle);
+            pollHandle = null;
+          }
+        }
+      }).catch(function(error) {
+        // network error or 404 - ignore silently, will retry
+        // Log infrequently to avoid spamming logs
+        // console.error('[MMM-OpenWeatherForecast] HEAD check error: ' + error);
+      });
+    };
+
+    // Initial quick check
+    tryHead();
+
+    // Poll until timeout
+    pollHandle = setInterval(function() {
+      elapsed += intervalMs;
+      if (elapsed >= timeoutMs) {
+        if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+        console.log('[MMM-OpenWeatherForecast] Existing graph not found within timeout');
+        return;
+      }
+      tryHead();
+    }, intervalMs);
+  },
 
 });
